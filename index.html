@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f1514">
+<title>BP Log</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1514;
+    --card:#182120;
+    --ink:#e8eeec;
+    --muted:#8fa39f;
+    --line:#2a3634;
+    --accent:#3ec6b4;      /* teal — action */
+    --accent-soft:#12312c;
+    --sys:#ef8a75;         /* systolic — warm coral */
+    --dia:#3ec6b4;         /* diastolic — teal */
+    --pul:#b79aec;         /* pulse — violet */
+    --danger:#ef6a52;
+    --radius:10px;
+    font-size:16px;
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.45;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:16px 14px 60px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin:6px 0 18px}
+  h1{font-size:1.25rem;margin:0;letter-spacing:.02em}
+  h1 .beat{color:var(--sys)}
+  #syncState{font-size:.8rem;color:var(--muted)}
+  #syncState.err{color:var(--danger)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+  h2{font-size:.95rem;margin:0 0 12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+
+  /* Entry form */
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .field label{display:block;font-size:.75rem;color:var(--muted);margin-bottom:4px}
+  input,button{font:inherit}
+  input[type=number],input[type=date],input[type=time],input[type=text],input[type=password]{
+    width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#101918;color:var(--ink);
+    font-variant-numeric:tabular-nums;
+  }
+  input[type=number]{font-size:1.3rem;text-align:center;font-weight:600}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+  .row{display:flex;gap:10px;margin-top:12px;align-items:end;flex-wrap:wrap}
+  .row .field{flex:1;min-width:200px}
+  button{
+    padding:11px 18px;border:none;border-radius:8px;background:var(--accent);color:#08211d;
+    font-weight:600;cursor:pointer
+  }
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  button.small{padding:6px 10px;font-size:.8rem}
+  button:disabled{opacity:.5;cursor:default}
+
+  /* Averages */
+  .avgs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .avg{border-radius:8px;padding:12px;text-align:center;background:var(--accent-soft)}
+  .avg .num{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums}
+  .avg .lbl{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .avg.sys .num{color:var(--sys)} .avg.dia .num{color:var(--dia)} .avg.pul .num{color:var(--pul)}
+
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  th,td{padding:8px 6px;text-align:right;border-bottom:1px solid var(--line);font-size:.9rem}
+  th{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+  th:first-child,td:first-child{text-align:left}
+  td .del{background:none;border:none;color:var(--muted);cursor:pointer;padding:2px 6px}
+  td .del:hover{color:var(--danger)}
+  .empty{color:var(--muted);font-size:.9rem;text-align:center;padding:14px 0}
+
+  /* Settings */
+  details.settings{margin-bottom:16px}
+  details.settings summary{cursor:pointer;color:var(--muted);font-size:.85rem;padding:4px 0}
+  .settings .card{margin-top:8px}
+  .settings .field{margin-bottom:10px}
+  .hint{font-size:.75rem;color:var(--muted);margin-top:4px}
+  .msg{font-size:.85rem;margin-top:8px}
+  .msg.ok{color:var(--accent)} .msg.err{color:var(--danger)}
+  .chartbox{position:relative;height:280px}
+  @media(max-width:520px){
+    .grid3{gap:6px}
+    input[type=number]{font-size:1.15rem}
+    th,td{font-size:.8rem;padding:6px 4px}
+    .chartbox{height:220px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>BP<span class="beat">▮</span>Log</h1>
+    <span id="syncState">local only</span>
+  </header>
+
+  <div class="card">
+    <h2>New reading</h2>
+    <div class="grid3">
+      <div class="field"><label for="sys">Systolic</label><input id="sys" type="number" inputmode="numeric" min="50" max="300" placeholder="120"></div>
+      <div class="field"><label for="dia">Diastolic</label><input id="dia" type="number" inputmode="numeric" min="30" max="200" placeholder="80"></div>
+      <div class="field"><label for="pul">Pulse</label><input id="pul" type="number" inputmode="numeric" min="20" max="250" placeholder="70"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="dateIn">Date</label><input id="dateIn" type="date"></div>
+      <div class="field"><label for="timeIn">Time</label><input id="timeIn" type="time"></div>
+      <button id="saveBtn">Save reading</button>
+    </div>
+    <div id="saveMsg" class="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Averages (all readings)</h2>
+    <div class="avgs">
+      <div class="avg sys"><div class="num" id="avgSys">–</div><div class="lbl">Systolic</div></div>
+      <div class="avg dia"><div class="num" id="avgDia">–</div><div class="lbl">Diastolic</div></div>
+      <div class="avg pul"><div class="num" id="avgPul">–</div><div class="lbl">Pulse</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Trend</h2>
+    <div class="chartbox"><canvas id="chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>History</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>Date &amp; time</th><th>Sys</th><th>Dia</th><th>Pulse</th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="emptyNote" class="empty">No readings yet — add your first one above.</div>
+    <div class="row">
+      <button class="ghost small" id="exportBtn">Export JSON</button>
+      <button class="ghost small" id="importBtn">Import JSON</button>
+      <input type="file" id="importFile" accept=".json" hidden>
+    </div>
+  </div>
+
+  <details class="settings">
+    <summary>⚙ GitHub sync settings</summary>
+    <div class="card">
+      <div class="field"><label for="ghOwner">Owner (username)</label><input id="ghOwner" type="text" placeholder="your-github-username"></div>
+      <div class="field"><label for="ghRepo">Repository (private recommended)</label><input id="ghRepo" type="text" placeholder="bp-log"></div>
+      <div class="field"><label for="ghPath">Data file path</label><input id="ghPath" type="text" value="data.json"></div>
+      <div class="field">
+        <label for="ghToken">Personal access token</label>
+        <input id="ghToken" type="password" placeholder="github_pat_...">
+        <div class="hint">Fine-grained token, only this repo, permission "Contents: Read and write". Stored only in this browser.</div>
+      </div>
+      <div class="row">
+        <button id="connectBtn">Save &amp; connect</button>
+        <button class="ghost" id="disconnectBtn">Disconnect</button>
+      </div>
+      <div id="ghMsg" class="msg"></div>
+    </div>
+  </details>
+</div>
+
+<script>
+"use strict";
+const LS_DATA="bplog.entries", LS_CFG="bplog.cfg";
+let entries=[], cfg=null, fileSha=null, chart=null;
+
+const $=id=>document.getElementById(id);
+const fmt=ts=>{const d=new Date(ts);return d.toLocaleDateString()+" "+d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});};
+
+function loadLocal(){
+  try{entries=JSON.parse(localStorage.getItem(LS_DATA)||"[]");}catch(e){entries=[];}
+  try{cfg=JSON.parse(localStorage.getItem(LS_CFG)||"null");}catch(e){cfg=null;}
+}
+function saveLocal(){localStorage.setItem(LS_DATA,JSON.stringify(entries));}
+
+/* ---------- GitHub API ---------- */
+const apiUrl=()=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${encodeURIComponent(cfg.path)}`;
+const headers=()=>({Authorization:"Bearer "+cfg.token,Accept:"application/vnd.github+json"});
+
+// UTF-8 safe base64
+const b64enc=s=>btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+const b64dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,"")),c=>c.charCodeAt(0)));
+
+async function ghLoad(){
+  const r=await fetch(apiUrl(),{headers:headers()});
+  if(r.status===404){fileSha=null;return null;}          // file not created yet
+  if(!r.ok)throw new Error("GitHub read failed ("+r.status+")");
+  const j=await r.json();
+  fileSha=j.sha;
+  return JSON.parse(b64dec(j.content));
+}
+async function ghSave(){
+  const body={message:"bp-log update "+new Date().toISOString(),
+              content:b64enc(JSON.stringify(entries,null,2))};
+  if(fileSha)body.sha=fileSha;
+  const r=await fetch(apiUrl(),{method:"PUT",headers:{...headers(),"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error("GitHub write failed ("+r.status+")");
+  const j=await r.json();
+  fileSha=j.content.sha;
+}
+function setSync(txt,err){const el=$("syncState");el.textContent=txt;el.className=err?"err":"";}
+
+async function connectGitHub(showMsg){
+  if(!cfg){setSync("local only");return;}
+  try{
+    setSync("syncing…");
+    const remote=await ghLoad();
+    if(remote===null){          // no remote file yet → push local up
+      if(entries.length)await ghSave();
+    }else{
+      // merge: union by id, remote wins nothing—just dedupe
+      const map=new Map(remote.map(e=>[e.id,e]));
+      for(const e of entries)map.set(e.id,e);
+      entries=[...map.values()].sort((a,b)=>a.ts-b.ts);
+      saveLocal();
+      await ghSave();
+    }
+    setSync("synced ✓");
+    if(showMsg)msg("ghMsg","Connected. Data synced.","ok");
+    render();
+  }catch(e){
+    setSync("sync error",true);
+    if(showMsg)msg("ghMsg",e.message+" — check owner/repo/token.","err");
+  }
+}
+
+/* ---------- UI ---------- */
+function msg(id,t,cls){const el=$(id);el.textContent=t;el.className="msg "+(cls||"");if(t)setTimeout(()=>{el.textContent="";},5000);}
+
+function setNow(){
+  const d=new Date(),p=n=>String(n).padStart(2,"0");
+  $("dateIn").value=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  $("timeIn").value=`${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function addEntry(){
+  const s=+$("sys").value,d=+$("dia").value,p=+$("pul").value,
+        dt=$("dateIn").value,tm=$("timeIn").value;
+  if(!s||!d||!p||!dt||!tm){msg("saveMsg","Fill in all three values, date and time.","err");return;}
+  if(s<50||s>300||d<30||d>200||p<20||p>250){msg("saveMsg","One of the values looks out of range.","err");return;}
+  const e={id:Date.now()+"-"+Math.random().toString(36).slice(2,7),ts:new Date(dt+"T"+tm).getTime(),sys:s,dia:d,pul:p};
+  entries.push(e);entries.sort((a,b)=>a.ts-b.ts);
+  saveLocal();render();
+  $("sys").value=$("dia").value=$("pul").value="";setNow();$("sys").focus();
+  msg("saveMsg","Saved.","ok");
+  if(cfg){try{setSync("syncing…");await ghSave();setSync("synced ✓");}catch(err){setSync("sync error — saved locally",true);}}
+}
+
+async function delEntry(id){
+  if(!confirm("Delete this reading?"))return;
+  entries=entries.filter(e=>e.id!==id);
+  saveLocal();render();
+  if(cfg){try{setSync("syncing…");await ghSave();setSync("synced ✓");}catch(err){setSync("sync error — saved locally",true);}}
+}
+
+function render(){
+  // table (newest first)
+  const tb=$("tbody");tb.innerHTML="";
+  const sorted=[...entries].sort((a,b)=>b.ts-a.ts);
+  for(const e of sorted){
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${fmt(e.ts)}</td><td>${e.sys}</td><td>${e.dia}</td><td>${e.pul}</td>
+      <td><button class="del" title="Delete" data-id="${e.id}">✕</button></td>`;
+    tb.appendChild(tr);
+  }
+  $("emptyNote").style.display=entries.length?"none":"block";
+  // averages
+  const avg=k=>entries.length?Math.round(entries.reduce((a,e)=>a+e[k],0)/entries.length):"–";
+  $("avgSys").textContent=avg("sys");$("avgDia").textContent=avg("dia");$("avgPul").textContent=avg("pul");
+  drawChart();
+}
+
+function drawChart(){
+  const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const labels=entries.map(e=>new Date(e.ts).toLocaleDateString([], {month:"short",day:"numeric"})+" "+new Date(e.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}));
+  const ds=(lbl,key,col)=>({label:lbl,data:entries.map(e=>e[key]),borderColor:col,backgroundColor:col,tension:.25,pointRadius:3,borderWidth:2});
+  const data={labels,datasets:[ds("Systolic","sys",css("--sys")),ds("Diastolic","dia",css("--dia")),ds("Pulse","pul",css("--pul"))]};
+  if(chart){chart.data=data;chart.update();return;}
+  const gr="rgba(255,255,255,.08)",tx=css("--muted");
+  chart=new Chart($("chart"),{type:"line",data,options:{
+    maintainAspectRatio:false,
+    interaction:{mode:"index",intersect:false},
+    scales:{x:{ticks:{maxTicksLimit:8,autoSkip:true,color:tx},grid:{color:gr}},
+            y:{suggestedMin:40,suggestedMax:180,ticks:{color:tx},grid:{color:gr}}},
+    plugins:{legend:{labels:{boxWidth:12,color:css("--ink")}}}
+  }});
+}
+
+/* ---------- export / import ---------- */
+$("exportBtn").onclick=()=>{
+  const blob=new Blob([JSON.stringify(entries,null,2)],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="bp-log-"+new Date().toISOString().slice(0,10)+".json";a.click();
+};
+$("importBtn").onclick=()=>$("importFile").click();
+$("importFile").onchange=async ev=>{
+  const f=ev.target.files[0];if(!f)return;
+  try{
+    const arr=JSON.parse(await f.text());
+    if(!Array.isArray(arr))throw 0;
+    const map=new Map(entries.map(e=>[e.id,e]));
+    for(const e of arr)if(e.id&&e.ts&&e.sys)map.set(e.id,e);
+    entries=[...map.values()].sort((a,b)=>a.ts-b.ts);
+    saveLocal();render();
+    if(cfg){try{await ghSave();setSync("synced ✓");}catch(_){setSync("sync error",true);}}
+    msg("saveMsg","Imported "+arr.length+" readings (merged).","ok");
+  }catch(_){msg("saveMsg","Not a valid export file.","err");}
+  ev.target.value="";
+};
+
+/* ---------- settings ---------- */
+$("connectBtn").onclick=()=>{
+  const owner=$("ghOwner").value.trim(),repo=$("ghRepo").value.trim(),
+        path=$("ghPath").value.trim()||"data.json",token=$("ghToken").value.trim();
+  if(!owner||!repo||!token){msg("ghMsg","Owner, repo and token are required.","err");return;}
+  cfg={owner,repo,path,token};
+  localStorage.setItem(LS_CFG,JSON.stringify(cfg));
+  connectGitHub(true);
+};
+$("disconnectBtn").onclick=()=>{
+  cfg=null;fileSha=null;localStorage.removeItem(LS_CFG);
+  $("ghToken").value="";setSync("local only");msg("ghMsg","Disconnected. Data stays in this browser.","ok");
+};
+
+/* ---------- events & init ---------- */
+$("saveBtn").onclick=addEntry;
+$("tbody").addEventListener("click",e=>{const b=e.target.closest(".del");if(b)delEntry(b.dataset.id);});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&["sys","dia","pul"].includes(document.activeElement?.id))addEntry();});
+
+loadLocal();
+setNow();
+if(cfg){$("ghOwner").value=cfg.owner;$("ghRepo").value=cfg.repo;$("ghPath").value=cfg.path;$("ghToken").value=cfg.token;}
+render();
+if(cfg)connectGitHub(false);
+</script>
+</body>
+</html>
