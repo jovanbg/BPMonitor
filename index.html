@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0f1514">
 <title>BP Log</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>if(typeof Chart==="undefined")document.write('<script src="https:\/\/cdn.jsdelivr.net\/npm\/chart.js@4.4.4\/dist\/chart.umd.min.js"><\/script>');</script>
 <style>
   :root{
     --bg:#0f1514;
@@ -276,6 +277,10 @@ function render(){
 }
 
 function drawChart(){
+  if(typeof Chart==="undefined"){
+    $("chart").parentElement.innerHTML='<div class="empty">Chart library could not load — check your connection and refresh. Your data is safe.</div>';
+    return;
+  }
   const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const labels=entries.map(e=>new Date(e.ts).toLocaleDateString([], {month:"short",day:"numeric"})+" "+new Date(e.ts).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}));
   const ds=(lbl,key,col)=>({label:lbl,data:entries.map(e=>e[key]),borderColor:col,backgroundColor:col,tension:.25,pointRadius:3,borderWidth:2});
