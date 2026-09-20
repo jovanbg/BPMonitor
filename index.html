@@ -240,9 +240,9 @@ async function connectGitHub(showMsg){
     if(remote===null){          // no remote file yet → push local up
       if(entries.length)await ghSave();
     }else{
-      // merge: union by id, remote wins nothing—just dedupe
+      // merge: union by id; same id → merge fields (remote-only fields like arm survive)
       const map=new Map(remote.map(e=>[e.id,e]));
-      for(const e of entries)map.set(e.id,e);
+      for(const e of entries)map.set(e.id,{...map.get(e.id),...e});
       entries=[...map.values()].sort((a,b)=>a.ts-b.ts);
       saveLocal();
       await ghSave();
@@ -384,7 +384,7 @@ $("importFile").onchange=async ev=>{
     const arr=JSON.parse(await f.text());
     if(!Array.isArray(arr))throw 0;
     const map=new Map(entries.map(e=>[e.id,e]));
-    for(const e of arr)if(e.id&&e.ts&&e.sys)map.set(e.id,e);
+    for(const e of arr)if(e.id&&e.ts&&e.sys)map.set(e.id,{...map.get(e.id),...e});
     entries=[...map.values()].sort((a,b)=>a.ts-b.ts);
     saveLocal();render();
     if(cfg){try{await ghSave();setSync("synced ✓");}catch(_){setSync("sync error",true);}}
