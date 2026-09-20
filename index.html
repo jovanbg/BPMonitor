@@ -83,6 +83,19 @@
   .msg{font-size:.85rem;margin-top:8px}
   .msg.ok{color:var(--accent)} .msg.err{color:var(--danger)}
   .chartbox{position:relative;height:280px}
+  /* arm switch */
+  .armswitch{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .armswitch button{background:#101918;color:var(--muted);border:none;border-radius:0;padding:9px 22px;font-weight:600}
+  .armswitch button.on{background:var(--accent);color:#08211d}
+  /* paired L/R measurements */
+  tbody.pair td{background:rgba(62,198,180,.07)}
+  tbody.pair tr:first-child td{border-top:1px solid var(--accent)}
+  tbody.pair tr:last-child td{border-bottom:1px solid var(--accent)}
+  tbody.pair tr:first-child td:first-child{border-left:1px solid var(--accent);border-top-left-radius:8px}
+  tbody.pair tr:last-child td:first-child{border-left:1px solid var(--accent);border-bottom-left-radius:8px}
+  tbody.pair tr:first-child td:last-child{border-right:1px solid var(--accent);border-top-right-radius:8px}
+  tbody.pair tr:last-child td:last-child{border-right:1px solid var(--accent);border-bottom-right-radius:8px}
+  td.arm,th.arm{text-align:center}
   .legend{display:flex;gap:16px;font-size:.8rem;color:var(--muted);margin-bottom:8px}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
   .chartbox svg{width:100%;height:100%;display:block}
@@ -104,6 +117,13 @@
 
   <div class="card">
     <h2>New reading</h2>
+    <div class="field" style="margin-bottom:12px">
+      <label>Arm</label>
+      <div class="armswitch" id="armSwitch">
+        <button type="button" data-arm="L" class="on">Left</button>
+        <button type="button" data-arm="R">Right</button>
+      </div>
+    </div>
     <div class="grid3">
       <div class="field"><label for="sys">Systolic</label><input id="sys" type="number" inputmode="numeric" min="50" max="300" placeholder="120"></div>
       <div class="field"><label for="dia">Diastolic</label><input id="dia" type="number" inputmode="numeric" min="30" max="200" placeholder="80"></div>
@@ -139,9 +159,8 @@
   <div class="card">
     <h2>History</h2>
     <div style="overflow-x:auto">
-      <table>
-        <thead><tr><th>Date &amp; time</th><th>Sys</th><th>Dia</th><th>Pulse</th><th></th></tr></thead>
-        <tbody id="tbody"></tbody>
+      <table id="histTable">
+        <thead><tr><th>Date &amp; time</th><th class="arm">Arm</th><th>Sys</th><th>Dia</th><th>Pulse</th><th></th></tr></thead>
       </table>
     </div>
     <div id="emptyNote" class="empty">No readings yet — add your first one above.</div>
@@ -246,15 +265,31 @@ function setNow(){
   $("timeIn").value=`${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+let curArm="L";
+function setArm(a){
+  curArm=a;
+  $("armSwitch").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.arm===a));
+  $("saveBtn").textContent="Save reading "+a;
+}
+$("armSwitch").addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  setArm(b.dataset.arm);
+});
+// auto-advance: 3 digits sys → dia, 2 digits dia → pulse
+$("sys").addEventListener("input",()=>{if($("sys").value.length>=3)$("dia").focus();});
+$("dia").addEventListener("input",()=>{if($("dia").value.length>=2)$("pul").focus();});
+
 async function addEntry(){
   const s=+$("sys").value,d=+$("dia").value,p=+$("pul").value,
         dt=$("dateIn").value,tm=$("timeIn").value;
   if(!s||!d||!p||!dt||!tm){msg("saveMsg","Fill in all three values, date and time.","err");return;}
   if(s<50||s>300||d<30||d>200||p<20||p>250){msg("saveMsg","One of the values looks out of range.","err");return;}
-  const e={id:Date.now()+"-"+Math.random().toString(36).slice(2,7),ts:new Date(dt+"T"+tm).getTime(),sys:s,dia:d,pul:p};
+  const e={id:Date.now()+"-"+Math.random().toString(36).slice(2,7),ts:new Date(dt+"T"+tm).getTime(),sys:s,dia:d,pul:p,arm:curArm};
   entries.push(e);entries.sort((a,b)=>a.ts-b.ts);
   saveLocal();render();
-  $("sys").value=$("dia").value=$("pul").value="";setNow();$("sys").focus();
+  $("sys").value=$("dia").value=$("pul").value="";setNow();
+  if(e.arm==="L")setArm("R");
+  $("sys").focus();
   msg("saveMsg","Saved.","ok");
   if(cfg){try{setSync("syncing…");await ghSave();setSync("synced ✓");}catch(err){setSync("sync error — saved locally",true);}}
 }
@@ -266,15 +301,28 @@ async function delEntry(id){
   if(cfg){try{setSync("syncing…");await ghSave();setSync("synced ✓");}catch(err){setSync("sync error — saved locally",true);}}
 }
 
+function rowHtml(e){
+  return `<tr><td>${fmt(e.ts)}</td><td class="arm">${e.arm||"–"}</td><td>${e.sys}</td><td>${e.dia}</td><td>${e.pul}</td>
+    <td><button class="del" title="Delete" data-id="${e.id}">✕</button></td></tr>`;
+}
 function render(){
-  // table (newest first)
-  const tb=$("tbody");tb.innerHTML="";
+  // table (newest first), pairing L/R readings taken within 10 min
+  const table=$("histTable");
+  table.querySelectorAll("tbody").forEach(tb=>tb.remove());
   const sorted=[...entries].sort((a,b)=>b.ts-a.ts);
-  for(const e of sorted){
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${fmt(e.ts)}</td><td>${e.sys}</td><td>${e.dia}</td><td>${e.pul}</td>
-      <td><button class="del" title="Delete" data-id="${e.id}">✕</button></td>`;
-    tb.appendChild(tr);
+  let i=0;
+  while(i<sorted.length){
+    const a=sorted[i],b=sorted[i+1];
+    const tb=document.createElement("tbody");
+    if(b&&a.arm&&b.arm&&a.arm!==b.arm&&Math.abs(a.ts-b.ts)<=10*60*1000){
+      tb.className="pair";
+      tb.innerHTML=rowHtml(a)+rowHtml(b);
+      i+=2;
+    }else{
+      tb.innerHTML=rowHtml(a);
+      i+=1;
+    }
+    table.appendChild(tb);
   }
   $("emptyNote").style.display=entries.length?"none":"block";
   // averages
@@ -361,11 +409,12 @@ $("disconnectBtn").onclick=()=>{
 
 /* ---------- events & init ---------- */
 $("saveBtn").onclick=addEntry;
-$("tbody").addEventListener("click",e=>{const b=e.target.closest(".del");if(b)delEntry(b.dataset.id);});
+$("histTable").addEventListener("click",e=>{const b=e.target.closest(".del");if(b)delEntry(b.dataset.id);});
 document.addEventListener("keydown",e=>{if(e.key==="Enter"&&["sys","dia","pul"].includes(document.activeElement?.id))addEntry();});
 
 loadLocal();
 setNow();
+setArm(curArm);
 if(cfg){$("ghOwner").value=cfg.owner;$("ghRepo").value=cfg.repo;$("ghPath").value=cfg.path;$("ghToken").value=cfg.token;}
 render();
 if(cfg)connectGitHub(false);
